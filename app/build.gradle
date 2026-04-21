@@ -3,20 +3,17 @@ plugins {
 }
 
 android {
-    namespace 'com.example.adblocker'
+    namespace 'com.example.app'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.example.adblocker"
+        applicationId "com.example.app"
         minSdk 26
         targetSdk 34
         versionCode 1
         versionName "1.0"
 
-        // 👇 фикс ABI (чтобы только ARM)
-        ndk {
-            abiFilters 'arm64-v8a', 'armeabi-v7a'
-        }
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -24,39 +21,33 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
-        debug {
-            minifyEnabled false
-        }
-    }
-
-    // 💥 УДАЛЯЕМ ВСЁ ЛЕВОЕ ИЗ APK
-    packagingOptions {
-        resources {
-            excludes += [
-                "**/amd64-*/**",
-                "**/i386-*/**",
-                "**/x86-*/**",
-                "META-INF/**"
-            ]
-        }
-        jniLibs {
-            excludes += ["**/*.so"]
-        }
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_11
-        targetCompatibility JavaVersion.VERSION_11
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
 }
 
 dependencies {
 
-    // ❗ НОРМАЛЬНЫЙ Netty (без мусора)
-    implementation("io.netty:netty-handler:4.1.108.Final") {
-        exclude group: "io.netty", module: "netty-transport-native-epoll"
-    }
-
+    // Android базовые
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+
+    // ✅ ВАЖНО — то что тебе не хватало
+    implementation 'com.google.guava:guava:31.1-android'
+
+    implementation 'org.bouncycastle:bcprov-jdk15to18:1.70'
+    implementation 'org.bouncycastle:bcpkix-jdk15to18:1.70'
+
+    implementation 'io.netty:netty-all:4.1.86.Final'
+
+    implementation 'org.littleshoot:littleproxy:1.1.2'
+
+    // Тесты
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
 }
