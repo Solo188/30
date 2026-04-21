@@ -60,17 +60,18 @@ class AhoCorasick {
             val cur = queue.removeFirst()
             for ((ch, child) in cur.children) {
                 // Failure link: идём по failure цепочке родителя
-                var failState = cur.failure
+                var failState: Node = cur.failure ?: root
                 while (failState != root && ch !in failState.children) {
-                    failState = failState.failure!!
+                    failState = failState.failure ?: root
                 }
                 child.failure = failState.children[ch]?.takeIf { it != child } ?: root
 
                 // Output link: если по failure нашли terminal — цепляем
-                child.output = if (child.failure?.isTerminal == true)
-                    child.failure
+                val childFailure = child.failure
+                child.output = if (childFailure != null && childFailure.isTerminal)
+                    childFailure
                 else
-                    child.failure?.output
+                    childFailure?.output
 
                 queue.add(child)
             }
