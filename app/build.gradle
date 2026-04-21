@@ -19,7 +19,7 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled false   // 🔥 отключил — чтобы не ломалось
+            minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
@@ -41,7 +41,9 @@ android {
         viewBinding true
     }
 
+    // 🔥 ГЛАВНЫЙ ФИКС ВСЕЙ ПРОБЛЕМЫ
     packaging {
+
         resources {
             excludes += [
                 'META-INF/INDEX.LIST',
@@ -62,17 +64,17 @@ android {
         }
 
         jniLibs {
+            useLegacyPackaging = true
+
+            // 💀 УБИВАЕМ ВЕСЬ НАТИВНЫЙ МУСОР (Linux/Windows/Mac)
             excludes += [
-                '**/libnetty_transport_native_epoll_x86_64.so',
-                '**/libnetty_transport_native_epoll_aarch_64.so',
-                '**/libnetty_transport_native_epoll_aarch64.so',
-                '**/libnetty_tcnative*.so',
-                '**/libnetty*.so',
+                '**/*'
             ]
         }
     }
 }
 
+// фикс версии Netty
 configurations.all {
     resolutionStrategy {
         force 'io.netty:netty-all:4.0.44.Final'
@@ -106,7 +108,7 @@ dependencies {
         exclude group: 'com.google.guava'
     }
 
-    // Netty (фикс версия)
+    // Netty (чистая версия без мусора)
     implementation('io.netty:netty-all:4.0.44.Final') {
         exclude group: 'io.netty', module: 'netty-transport-native-epoll'
     }
