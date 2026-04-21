@@ -257,7 +257,7 @@ class TcpControlBlock(
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private fun buildResponse(flags: Int, seq: Long, ack: Long, payload: ByteArray = ByteArray(0)): ByteArray {
-        return Packet(ByteArray(0), 0).buildTcpResponse(
+        return Packet.buildTcpResponse(
             srcIp   = tuple.dstIpBytes(),
             dstIp   = tuple.srcIpBytes(),
             srcPort = tuple.dstPort,

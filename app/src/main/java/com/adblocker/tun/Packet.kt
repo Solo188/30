@@ -25,6 +25,48 @@ class Packet(private val raw: ByteArray, val length: Int) {
             if (version != 4) return null
             return Packet(buf, len)
         }
+
+        /**
+         * Строит TCP пакет с нуля — не требует экземпляра Packet.
+         * Вызывается из TcpControlBlock.buildResponse().
+         */
+        fun buildTcpResponse(
+            srcIp: ByteArray, dstIp: ByteArray,
+            srcPort: Int, dstPort: Int,
+            seq: Long, ack: Long, flags: Int,
+            window: Int = 65535,
+            payload: ByteArray = ByteArray(0)
+        ): ByteArray {
+            val tcpLen   = 20 + payload.size
+            val totalLen = 20 + tcpLen
+            val out = ByteArray(totalLen)
+            val b = ByteBuffer.wrap(out)
+
+            // IP header
+            b.put(0x45.toByte()); b.put(0)
+            b.putShort(totalLen.toShort())
+            b.putShort(0); b.putShort(0x4000.toShort())
+            b.put(64); b.put(PROTO_TCP.toByte())
+            b.putShort(0)           // checksum placeholder
+            b.put(srcIp); b.put(dstIp)
+
+            PacketUtils.writeShort(out, 10, PacketUtils.ipChecksum(out, 20))
+
+            // TCP header
+            b.putShort(srcPort.toShort()); b.putShort(dstPort.toShort())
+            b.putInt(seq.toInt()); b.putInt(ack.toInt())
+            b.put(0x50.toByte())    // data offset = 5
+            b.put(flags.toByte())
+            b.putShort(window.toShort())
+            b.putShort(0)           // checksum placeholder
+            b.putShort(0)           // urgent
+            if (payload.isNotEmpty()) b.put(payload)
+
+            val tcpSeg = out.copyOfRange(20, totalLen)
+            PacketUtils.writeShort(out, 20 + 16, PacketUtils.tcpChecksum(srcIp, dstIp, tcpSeg))
+
+            return out
+        }
     }
 
     // ── IP header ────────────────────────────────────────────────────────────
@@ -100,45 +142,7 @@ class Packet(private val raw: ByteArray, val length: Int) {
         return if (payLen > 0) raw.copyOfRange(start, start + payLen) else ByteArray(0)
     }
 
-    // ── Builders ─────────────────────────────────────────────────────────────
-
-    fun buildTcpResponse(
-        srcIp: ByteArray, dstIp: ByteArray,
-        srcPort: Int, dstPort: Int,
-        seq: Long, ack: Long, flags: Int,
-        window: Int = 65535,
-        payload: ByteArray = ByteArray(0)
-    ): ByteArray {
-        val tcpLen   = 20 + payload.size
-        val totalLen = 20 + tcpLen
-        val out = ByteArray(totalLen)
-        val b = ByteBuffer.wrap(out)
-
-        // IP header
-        b.put(0x45.toByte()); b.put(0)
-        b.putShort(totalLen.toShort())
-        b.putShort(0); b.putShort(0x4000.toShort())
-        b.put(64); b.put(PROTO_TCP.toByte())
-        b.putShort(0)           // checksum placeholder
-        b.put(srcIp); b.put(dstIp)
-
-        PacketUtils.writeShort(out, 10, PacketUtils.ipChecksum(out, 20))
-
-        // TCP header
-        b.putShort(srcPort.toShort()); b.putShort(dstPort.toShort())
-        b.putInt(seq.toInt()); b.putInt(ack.toInt())
-        b.put(0x50.toByte())    // data offset = 5
-        b.put(flags.toByte())
-        b.putShort(window.toShort())
-        b.putShort(0)           // checksum placeholder
-        b.putShort(0)           // urgent
-        if (payload.isNotEmpty()) b.put(payload)
-
-        val tcpSeg = out.copyOfRange(20, totalLen)
-        PacketUtils.writeShort(out, 20 + 16, PacketUtils.tcpChecksum(srcIp, dstIp, tcpSeg))
-
-        return out
-    }
+    // ── Instance builder — используется только для buildRst() ────────────────
 
     fun buildRst(): ByteArray {
         val ackNum = if (tcpHasFlag(TCP_ACK)) tcpAck
