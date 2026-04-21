@@ -1,0 +1,28 @@
+# AdBlocker — базовый список доменов
+# Строки с # игнорируются
+
+doubleclick.net
+googlesyndication.com
+adservice.google.com
+adservice.google.ru
+analytics.google.com
+www.google-analytics.com
+ssl.google-analytics.com
+pagead2.googlesyndication.com
+tpc.googlesyndication.com
+googleads.g.doubleclick.net
+stats.g.doubleclick.net
+ad.doubleclick.net
+pubads.g.doubleclick.net
+securepubads.g.doubleclick.net
+adnxs.com
+advertising.amazon.com
+aax.amazon-adsystem.com
+adsystem.amazon.com
+adserver.yahoo.com
+ads.yahoo.com
+tracking.google.com
+beacon.google.com
+ads.twitter.com
+analytics.twitter.com
+ads.linkedin.com

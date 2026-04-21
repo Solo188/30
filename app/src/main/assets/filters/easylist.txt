@@ -1,0 +1,51 @@
+[Adblock Plus 2.0]
+! Title: EasyList — Placeholder
+! Description: Replace this file with the real EasyList from https://easylist.to/easylist/easylist.txt
+! The real EasyList is ~80 000 rules (~3 MB). Download it and replace this file before building.
+!
+! ---- Sample rules below for development/testing ----
+
+||doubleclick.net^
+||googlesyndication.com^
+||googleadservices.com^
+||googletagservices.com^
+||adnxs.com^
+||ads.yahoo.com^
+||advertising.com^
+||adform.net^
+||adroll.com^
+||moatads.com^
+||criteo.com^
+||criteo.net^
+||rubiconproject.com^
+||openx.net^
+||pubmatic.com^
+||33across.com^
+||casalemedia.com^
+||smaato.com^
+||smartadserver.com^
+||lijit.com^
+||contextweb.com^
+||yieldmanager.com^
+||buysellads.com^
+||adsafeprotected.com^
+||scorecardresearch.com^
+||quantserve.com^
+||omtrdc.net^
+||demdex.net^
+||mktoresp.com^
+||chartbeat.com^
+||hotjar.com^
+||bing.com/fd/ls/lsp.aspx
+||amazon-adsystem.com^
+||adtechus.com^
+||addthis.com^
+||sharethis.com^
+||zergnet.com^
+||outbrain.com^
+||taboola.com^
+||content.ad^
+||revcontent.com^
+||mgid.com^
+||disqus.com^$third-party
+||tracker.example.com^

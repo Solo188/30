@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Logback configuration for AdBlocker Android app.
+  Routes LittleProxy / Netty logs through logcat so all pipeline
+  stages are visible in Android Studio Logcat.
+-->
+<configuration>
+
+  <!-- Route SLF4J log calls to Android logcat -->
+  <appender name="logcat" class="ch.qos.logback.classic.android.LogcatAppender">
+    <tagEncoder>
+      <pattern>%logger{12}</pattern>
+    </tagEncoder>
+    <encoder>
+      <pattern>[%thread] %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- Suppress excessive Netty debug chatter in release builds -->
+  <logger name="io.netty" level="WARN" />
+  <logger name="org.littleshoot" level="INFO" />
+  <logger name="com.adblocker" level="DEBUG" />
+
+  <root level="INFO">
+    <appender-ref ref="logcat" />
+  </root>
+
+</configuration>
