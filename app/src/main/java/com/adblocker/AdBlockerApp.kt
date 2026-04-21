@@ -10,17 +10,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import org.bouncycastle.jce.provider.BouncyCastleProvider
+import java.security.Security
 
-/**
- * Application entry point.
- *
- * Responsibilities:
- *  - Create notification channels (required on API 26+)
- *  - Initialise the FilterEngine asynchronously so the UI is responsive immediately
- *
- * The FilterEngine is a singleton shared by both the filter pipeline
- * (LittleProxy / HttpFilters) and the UI stats display.
- */
 class AdBlockerApp : Application() {
 
     companion object {
@@ -36,9 +28,15 @@ class AdBlockerApp : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+
+        // Android имеет встроенный урезанный BC провайдер под именем "BC".
+        // Удаляем его и вставляем полноценный — только так SHA256WITHRSA работает корректно.
+        // Без этого LittleProxy MITM не может создать root CA сертификат.
+        Security.removeProvider("BC")
+        Security.insertProviderAt(BouncyCastleProvider(), 1)
+
         createNotificationChannels()
 
-        // Load EasyList rules in the background; does not block startup.
         appScope.launch {
             Logger.i("App", "Loading filter rules…")
             filterEngine.initialize()
