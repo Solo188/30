@@ -96,7 +96,7 @@ class TcpTunnel(
             headerBuf.write(b)
             // Detect 
 
- — end of HTTP headers
+ 
             if (b0 == '
 '.code && b1 == '
 '.code && b2 == '
