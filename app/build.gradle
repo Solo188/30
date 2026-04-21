@@ -1,148 +1,62 @@
 plugins {
     id 'com.android.application'
-    id 'org.jetbrains.kotlin.android'
-    id 'kotlin-kapt'
 }
 
 android {
-    namespace 'com.adblocker'
+    namespace 'com.example.adblocker'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.adblocker"
-        minSdk 26
+        applicationId "com.example.adblocker"
+        minSdk 21
         targetSdk 34
         versionCode 1
-        versionName "1.0.0"
-        multiDexEnabled true
+        versionName "1.0"
+
+        // 👇 фикс ABI (чтобы только ARM)
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
     }
 
     buildTypes {
         release {
-            minifyEnabled true
+            minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
             minifyEnabled false
-            debuggable true
+        }
+    }
+
+    // 💥 УДАЛЯЕМ ВСЁ ЛЕВОЕ ИЗ APK
+    packagingOptions {
+        resources {
+            excludes += [
+                "**/amd64-*/**",
+                "**/i386-*/**",
+                "**/x86-*/**",
+                "META-INF/**"
+            ]
+        }
+        jniLibs {
+            excludes += ["**/*.so"]
         }
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = '17'
-    }
-
-    buildFeatures {
-        viewBinding true
-    }
-
-    packaging {
-        resources {
-            excludes += [
-                'META-INF/INDEX.LIST',
-                'META-INF/io.netty.versions.properties',
-                'META-INF/DEPENDENCIES',
-                'META-INF/LICENSE',
-                'META-INF/LICENSE.txt',
-                'META-INF/NOTICE',
-                'META-INF/NOTICE.txt',
-                'META-INF/ASL2.0',
-                'META-INF/*.kotlin_module',
-                'META-INF/maven/**',
-                'META-INF/native-image/**',
-                'META-INF/proguard/**',
-                'META-INF/versions/**',
-                'mozilla/public-suffix-list.txt',
-            ]
-        }
-        // Исключаем нативные .so из Netty — они скомпилированы под Linux x86_64
-        // и вызывают INSTALL_FAILED_NO_MATCHING_ABIS на ARM устройствах.
-        // Netty автоматически падает на Java-реализацию при отсутствии нативных либ.
-        jniLibs {
-            excludes += [
-                '**/libnetty_transport_native_epoll_x86_64.so',
-                '**/libnetty_transport_native_epoll_aarch_64.so',
-                '**/libnetty_transport_native_epoll_aarch64.so',
-                '**/libnetty_tcnative*.so',
-                '**/libnetty*.so',
-            ]
-        }
-    }
-}
-
-configurations.all {
-    resolutionStrategy {
-        // Force Netty to a single consistent version compatible with LittleProxy 1.1.2
-        force 'io.netty:netty-all:4.0.44.Final'
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
     }
 }
 
 dependencies {
-    // Kotlin & Coroutines
-    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3'
 
-    // AndroidX
-    implementation 'androidx.core:core-ktx:1.12.0'
+    // ❗ НОРМАЛЬНЫЙ Netty (без мусора)
+    implementation("io.netty:netty-handler:4.1.108.Final") {
+        exclude group: "io.netty", module: "netty-transport-native-epoll"
+    }
+
     implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'androidx.activity:activity-ktx:1.8.2'
-    implementation 'androidx.fragment:fragment-ktx:1.6.2'
-    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
-    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
-    implementation 'androidx.lifecycle:lifecycle-livedata-ktx:2.7.0'
     implementation 'com.google.android.material:material:1.11.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    implementation 'androidx.recyclerview:recyclerview:1.3.2'
-    implementation 'androidx.multidex:multidex:2.0.1'
-
-    // LittleProxy — embedded HTTP/HTTPS proxy (Netty-based)
-    implementation('org.littleshoot:littleproxy:1.1.2') {
-        exclude group: 'io.netty'
-        exclude group: 'org.slf4j', module: 'slf4j-log4j12'
-        exclude group: 'log4j'
-        exclude group: 'com.google.guava'
-    }
-
-    // Netty — используем netty-all но исключаем нативный транспорт epoll
-    // (он скомпилирован под Linux x86_64 и ломает установку на ARM).
-    // Netty корректно работает на Java NIO без нативных либ.
-    implementation('io.netty:netty-all:4.0.44.Final') {
-        exclude group: 'io.netty', module: 'netty-transport-native-epoll'
-    }
-
-    // SLF4J + Logback for Android
-    implementation 'org.slf4j:slf4j-api:1.7.36'
-    implementation 'com.github.tony19:logback-android:3.0.0'
-
-    // Apache Commons IO (used by LittleProxy internals)
-    implementation 'commons-io:commons-io:2.11.0'
-
-    // Guava (Android variant)
-    implementation 'com.google.guava:guava:33.0.0-android'
-
-    // BouncyCastle (CA + per-domain cert generation for MITM)
-    implementation 'org.bouncycastle:bcprov-jdk18on:1.77'
-    implementation 'org.bouncycastle:bcpkix-jdk18on:1.77'
-
-    // OkHttp (upstream connectivity verification)
-    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
-
-    // Room (persistent blocked-request log)
-    implementation 'androidx.room:room-runtime:2.6.1'
-    implementation 'androidx.room:room-ktx:2.6.1'
-    kapt 'androidx.room:room-compiler:2.6.1'
-
-    // Gson — используется в AdBlockerHttpFilters для корректного парсинга YouTube JSON (Fix #8)
-    implementation 'com.google.code.gson:gson:2.10.1'
-
-    // Testing
-    testImplementation 'junit:junit:4.13.2'
-    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
-    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
 }
