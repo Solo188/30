@@ -185,7 +185,7 @@ class AdBlockerHttpFilters(
 
         val modified = sb.toString().toByteArray(charset)
         val newBuf   = Unpooled.wrappedBuffer(modified)
-        val newResp  = response.replace(newBuf)
+        val newResp  = response.replace(newBuf) as FullHttpResponse
         newResp.headers().set(HttpHeaders.Names.CONTENT_LENGTH, modified.size)
         newResp.headers().remove(HttpHeaders.Names.TRANSFER_ENCODING)
         return newResp
@@ -222,7 +222,7 @@ class AdBlockerHttpFilters(
             val newJson  = gson.toJson(root)
             val bytes    = newJson.toByteArray(Charsets.UTF_8)
             val newBuf   = Unpooled.wrappedBuffer(bytes)
-            val newResp  = response.replace(newBuf)
+            val newResp  = response.replace(newBuf) as FullHttpResponse
             newResp.headers().set(HttpHeaders.Names.CONTENT_LENGTH, bytes.size)
             newResp.headers().remove(HttpHeaders.Names.TRANSFER_ENCODING)
             Logger.i(TAG, "YouTube ad keys stripped: ${requestUrl.substringAfterLast('/')}")

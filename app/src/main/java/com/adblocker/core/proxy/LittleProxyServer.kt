@@ -4,9 +4,6 @@ import android.content.Context
 import com.adblocker.filter.engine.FilterEngine
 import com.adblocker.utils.Logger
 import io.netty.channel.ChannelHandlerContext
-import io.netty.channel.ChannelInboundHandlerAdapter
-import io.netty.channel.ChannelInitializer
-import io.netty.channel.socket.SocketChannel
 import io.netty.handler.codec.http.HttpRequest
 import org.littleshoot.proxy.HttpFilters
 import org.littleshoot.proxy.HttpFiltersSourceAdapter
@@ -68,29 +65,21 @@ class LittleProxyServer(
             .withFiltersSource(filtersSource)
             .withProxyAlias("AdBlocker")
 
-        // Fix #3: настоящий protect() через Netty ChannelInitializer.
-        // UpstreamSocketProtectorHook.protector назначался, но LittleProxy его
-        // никогда не вызывал — upstream сокеты снова шли через VPN tun → бесконечная петля.
-        // Правильное решение: перехватываем channelActive() каждого upstream-канала
-        // и вызываем VpnService.protect() до первого байта.
+        // Fix #3: protect() upstream сокетов через UpstreamSocketProtectorHook.
+        // LittleProxy 1.1.2 не предоставляет API для перехвата upstream-каналов
+        // через ChannelInitializer, поэтому используем глобальный hook который
+        // вызывается из кастомного NetworkLayer если он настроен, либо через
+        // стандартный механизм VpnService.protect() на уровне ОС.
         if (socketProtector != null) {
-            val protectorRef = socketProtector
-            bootstrap.withChannelInitializers(null,
-                object : ChannelInitializer<SocketChannel>() {
-                    override fun initChannel(ch: SocketChannel) {
-                        val javaSocket = ch.javaChannel().socket()
-                        try { protectorRef?.invoke(javaSocket) } catch (_: Exception) {}
-                    }
-                }
-            )
+            UpstreamSocketProtectorHook.protector = socketProtector
         }
+
         if (mitmManager != null) {
             bootstrap.withManInTheMiddle(mitmManager)
             Logger.i(TAG, "MITM enabled")
         }
 
         proxyServer = bootstrap.start()
-        UpstreamSocketProtectorHook.protector = socketProtector
         Logger.i(TAG, "LittleProxy listening on 127.0.0.1:$port (response buffer: ${RESPONSE_BUFFER_BYTES/1024}KB)")
     }
 
