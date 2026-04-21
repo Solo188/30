@@ -60,6 +60,18 @@ android {
                 'mozilla/public-suffix-list.txt',
             ]
         }
+        // Исключаем нативные .so из Netty — они скомпилированы под Linux x86_64
+        // и вызывают INSTALL_FAILED_NO_MATCHING_ABIS на ARM устройствах.
+        // Netty автоматически падает на Java-реализацию при отсутствии нативных либ.
+        jniLibs {
+            excludes += [
+                '**/libnetty_transport_native_epoll_x86_64.so',
+                '**/libnetty_transport_native_epoll_aarch_64.so',
+                '**/libnetty_transport_native_epoll_aarch64.so',
+                '**/libnetty_tcnative*.so',
+                '**/libnetty*.so',
+            ]
+        }
     }
 }
 
@@ -97,8 +109,12 @@ dependencies {
         exclude group: 'com.google.guava'
     }
 
-    // Netty — LittleProxy 1.1.2 requires 4.0.x
-    implementation 'io.netty:netty-all:4.0.44.Final'
+    // Netty — используем netty-all но исключаем нативный транспорт epoll
+    // (он скомпилирован под Linux x86_64 и ломает установку на ARM).
+    // Netty корректно работает на Java NIO без нативных либ.
+    implementation('io.netty:netty-all:4.0.44.Final') {
+        exclude group: 'io.netty', module: 'netty-transport-native-epoll'
+    }
 
     // SLF4J + Logback for Android
     implementation 'org.slf4j:slf4j-api:1.7.36'
