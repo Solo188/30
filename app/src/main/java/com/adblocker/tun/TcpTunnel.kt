@@ -95,17 +95,20 @@ class TcpTunnel(
             if (b == -1) break
             headerBuf.write(b)
             // Detect 
-
- 
-            if (b0 == '
-'.code && b1 == '
-'.code && b2 == '
-'.code && b == '
-'.code) break
-            b0 = b1; b1 = b2; b2 = b
+                        // Detect end of HTTP headers (\r\n\r\n)
+            if (b0 == '\r'.code && b1 == '\n'.code && b2 == '\r'.code && b == '\n'.code) {
+                break
+            }
+            
+            b0 = b1
+            b1 = b2
+            b2 = b
         }
         return headerBuf.toString(Charsets.US_ASCII.name()).lines().firstOrNull() ?: ""
     }
+
+ 
+            
 
     private fun readUpstream(sock: Socket) {
         val buf = ByteArray(READ_BUFFER_SIZE)
