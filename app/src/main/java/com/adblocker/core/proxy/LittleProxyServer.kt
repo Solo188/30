@@ -11,8 +11,11 @@ import org.littleshoot.proxy.impl.DefaultHttpProxyServer
 import org.littleshoot.proxy.mitm.Authority
 import org.littleshoot.proxy.mitm.CertificateSniffingMitmManager
 import java.io.File
+import java.io.IOException
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
+import javax.net.SocketFactory
 
 class LittleProxyServer(
     private val context: Context,
@@ -22,12 +25,12 @@ class LittleProxyServer(
 ) {
     companion object {
         private const val TAG = "LittleProxyServer"
-        // Fix #14: снижены лимиты буферов для экономии памяти на бюджетных устройствах
-        private const val RESPONSE_BUFFER_BYTES = 2 * 1024 * 1024   // 2 MB
-        private const val REQUEST_BUFFER_BYTES  = 1 * 1024 * 1024   // 1 MB
+        private const val RESPONSE_BUFFER_BYTES = 2 * 1024 * 1024
+        private const val REQUEST_BUFFER_BYTES  = 1 * 1024 * 1024
     }
 
     @Volatile private var proxyServer: org.littleshoot.proxy.HttpProxyServer? = null
+    @Volatile private var prevSocketFactory: SocketFactory? = null
 
     private fun buildAuthority(): Authority = Authority(
         context.filesDir, "adblocker-ca", "AdBlockerCA_2024!".toCharArray(),
@@ -37,6 +40,15 @@ class LittleProxyServer(
 
     fun start() {
         Logger.i(TAG, "Starting LittleProxy on port $port")
+
+        // Устанавливаем глобальный SocketFactory который автоматически вызывает
+        // VpnService.protect() для каждого upstream сокета создаваемого LittleProxy.
+        // Это единственный способ защитить upstream без патча исходников LittleProxy 1.1.2.
+        if (socketProtector != null) {
+            UpstreamSocketProtectorHook.protector = socketProtector
+            installProtectedSocketFactory(socketProtector)
+        }
+
         val authority = buildAuthority()
 
         val mitmManager = try {
@@ -51,12 +63,7 @@ class LittleProxyServer(
         val filtersSource = object : HttpFiltersSourceAdapter() {
             override fun filterRequest(req: HttpRequest, ctx: ChannelHandlerContext): HttpFilters =
                 AdBlockerHttpFilters(req, ctx, filterEngine)
-
-            // Буферизация запросов
             override fun getMaximumRequestBufferSizeInBytes(): Int  = REQUEST_BUFFER_BYTES
-
-            // КЛЮЧЕВОЕ: буферизация ответов — без этого serverToProxyResponse
-            // получает FullHttpResponse и мы можем читать/менять body
             override fun getMaximumResponseBufferSizeInBytes(): Int = RESPONSE_BUFFER_BYTES
         }
 
@@ -64,15 +71,7 @@ class LittleProxyServer(
             .withAddress(InetSocketAddress("127.0.0.1", port))
             .withFiltersSource(filtersSource)
             .withProxyAlias("AdBlocker")
-
-        // Fix #3: protect() upstream сокетов через UpstreamSocketProtectorHook.
-        // LittleProxy 1.1.2 не предоставляет API для перехвата upstream-каналов
-        // через ChannelInitializer, поэтому используем глобальный hook который
-        // вызывается из кастомного NetworkLayer если он настроен, либо через
-        // стандартный механизм VpnService.protect() на уровне ОС.
-        if (socketProtector != null) {
-            UpstreamSocketProtectorHook.protector = socketProtector
-        }
+            .withAllowLocalOnly(true)
 
         if (mitmManager != null) {
             bootstrap.withManInTheMiddle(mitmManager)
@@ -80,17 +79,80 @@ class LittleProxyServer(
         }
 
         proxyServer = bootstrap.start()
-        Logger.i(TAG, "LittleProxy listening on 127.0.0.1:$port (response buffer: ${RESPONSE_BUFFER_BYTES/1024}KB)")
+        Logger.i(TAG, "LittleProxy listening on 127.0.0.1:$port")
     }
 
     fun stop() {
         UpstreamSocketProtectorHook.protector = null
+        restorePreviousSocketFactory()
         proxyServer?.stop()
         proxyServer = null
         Logger.i(TAG, "LittleProxy stopped")
     }
 
     fun getCaPemFile(): File = buildAuthority().aliasFile(".pem")
+
+    /**
+     * Устанавливает глобальный javax.net.SocketFactory который вызывает
+     * VpnService.protect() на каждом новом сокете.
+     * LittleProxy и Netty используют javax.net.Socket напрямую для upstream —
+     * кастомная фабрика перехватывает эти вызовы.
+     */
+    private fun installProtectedSocketFactory(protector: (Socket) -> Unit) {
+        try {
+            prevSocketFactory = SocketFactory.getDefault()
+            val protectedFactory = object : SocketFactory() {
+                override fun createSocket(): Socket =
+                    Socket().also { tryProtect(it, protector) }
+
+                override fun createSocket(host: String, port: Int): Socket =
+                    Socket().also { tryProtect(it, protector) }.also {
+                        it.connect(InetSocketAddress(host, port))
+                    }
+
+                override fun createSocket(host: String, port: Int,
+                                          localHost: InetAddress, localPort: Int): Socket =
+                    Socket().also { tryProtect(it, protector) }.also {
+                        it.bind(InetSocketAddress(localHost, localPort))
+                        it.connect(InetSocketAddress(host, port))
+                    }
+
+                override fun createSocket(host: InetAddress, port: Int): Socket =
+                    Socket().also { tryProtect(it, protector) }.also {
+                        it.connect(InetSocketAddress(host, port))
+                    }
+
+                override fun createSocket(address: InetAddress, port: Int,
+                                          localAddress: InetAddress, localPort: Int): Socket =
+                    Socket().also { tryProtect(it, protector) }.also {
+                        it.bind(InetSocketAddress(localAddress, localPort))
+                        it.connect(InetSocketAddress(address, port))
+                    }
+
+                private fun tryProtect(sock: Socket, p: (Socket) -> Unit) {
+                    try { p(sock) } catch (e: Exception) {
+                        Logger.w(TAG, "Socket protect failed: ${e.message}")
+                    }
+                }
+            }
+
+            // Устанавливаем через reflection — стандартный API не позволяет
+            val field = SocketFactory::class.java.getDeclaredField("theFactory")
+            field.isAccessible = true
+            field.set(null, protectedFactory)
+            Logger.i(TAG, "Protected SocketFactory installed")
+        } catch (e: Exception) {
+            Logger.w(TAG, "Cannot install SocketFactory: ${e.message} — upstream sockets may loop")
+        }
+    }
+
+    private fun restorePreviousSocketFactory() {
+        try {
+            val field = SocketFactory::class.java.getDeclaredField("theFactory")
+            field.isAccessible = true
+            field.set(null, prevSocketFactory)
+        } catch (_: Exception) {}
+    }
 }
 
 object UpstreamSocketProtectorHook {
