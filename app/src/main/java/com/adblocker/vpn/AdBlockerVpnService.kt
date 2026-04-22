@@ -9,7 +9,8 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
-import com.adblocker.core.proxy.LocalProxyService
+import com.adblocker.core.proxy.LittleProxyServer
+import com.adblocker.AdBlockerApp
 import com.adblocker.tun.TcpStack
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -22,11 +23,10 @@ class AdBlockerVpnService : VpnService() {
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "AdBlockerVpn"
 
-        private const val VPN_ADDRESS  = "10.0.0.2"
-        private const val DNS_SERVER   = "8.8.8.8"
-        private const val MTU          = 1500
-
-        const val PROXY_PORT = 8118
+        private const val VPN_ADDRESS = "10.0.0.2"
+        private const val DNS_SERVER  = "8.8.8.8"
+        private const val MTU         = 1500
+        const val PROXY_PORT          = 8118
 
         const val ACTION_START         = "com.adblocker.vpn.START"
         const val ACTION_STOP          = "com.adblocker.vpn.STOP"
@@ -40,6 +40,7 @@ class AdBlockerVpnService : VpnService() {
     private val running = AtomicBoolean(false)
     private var vpnThread: Thread? = null
     private var tcpStack: TcpStack? = null
+    private var proxyServer: LittleProxyServer? = null
     private val domainFilter = DomainFilter()
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -55,8 +56,7 @@ class AdBlockerVpnService : VpnService() {
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
 
-        // Fix #1 + #2: загружаем список доменов СИНХРОННО до старта VPN-интерфейса.
-        // VPN-тоннель ещё не поднят → сетевой запрос DomainListUpdater не попадает в tun.
+        // 1. Загружаем список доменов
         DomainListUpdater().update(this, vpnService = null)
         domainFilter.loadFromFile(this)
         if (domainFilter.getBlacklistSize() == 0) {
@@ -64,13 +64,7 @@ class AdBlockerVpnService : VpnService() {
         }
         Log.i(TAG, "Domain list loaded: ${domainFilter.getBlacklistSize()} entries")
 
-        // 2. Поднимаем LittleProxy + MITM
-        VpnProtector.set(this)   // Fix #6
-        startService(Intent(this, LocalProxyService::class.java).apply {
-            putExtra(LocalProxyService.EXTRA_PORT, PROXY_PORT)
-        })
-
-        // 3. Устанавливаем VPN интерфейс
+        // 2. Устанавливаем VPN интерфейс
         vpnInterface = establishVpnInterface() ?: run {
             Log.e(TAG, "Failed to establish VPN interface")
             stopSelf()
@@ -81,7 +75,26 @@ class AdBlockerVpnService : VpnService() {
         isRunning = true
         broadcastState(VpnState.CONNECTED)
 
-        // 4. Запускаем TcpStack — заменяет весь старый runVpnLoop/handleTcpPacket
+        // 3. Запускаем LittleProxy прямо здесь — НЕ через отдельный Service.
+        //    Отдельный Service держит порт после остановки VPN → BindException при перезапуске.
+        VpnProtector.set(this)
+        val app = application as AdBlockerApp
+        val proxy = LittleProxyServer(
+            context         = applicationContext,
+            port            = PROXY_PORT,
+            filterEngine    = app.filterEngine,
+            socketProtector = { socket -> VpnProtector.protect(socket) }
+        )
+        proxyServer = proxy
+        try {
+            proxy.start()
+            Log.i(TAG, "LittleProxy started on port $PROXY_PORT")
+        } catch (e: Exception) {
+            Log.e(TAG, "LittleProxy failed to start", e)
+            // Продолжаем без MITM — DNS фильтрация всё равно работает
+        }
+
+        // 4. Запускаем TcpStack
         val pfd = vpnInterface!!
         val stack = TcpStack(
             tunIn        = FileInputStream(pfd.fileDescriptor),
@@ -94,9 +107,7 @@ class AdBlockerVpnService : VpnService() {
         )
         tcpStack = stack
 
-        vpnThread = Thread({
-            stack.start()
-        }, "AdBlockerTcpStack").apply { start() }
+        vpnThread = Thread({ stack.start() }, "AdBlockerTcpStack").apply { start() }
 
         Log.i(TAG, "VPN started. TcpStack + LittleProxy MITM active on port $PROXY_PORT")
     }
@@ -106,17 +117,8 @@ class AdBlockerVpnService : VpnService() {
             Builder()
                 .setSession("AdBlocker VPN")
                 .addAddress(VPN_ADDRESS, 32)
-                // IPv6 link-local address for the tun interface
-                .addAddress("fd00:1:fd00:1:fd00:1:fd00:1", 128)
-                // 0.0.0.0/1 + 128.0.0.0/1 покрывают весь IPv4.
-                // 127.x.x.x НЕ включён — loopback идёт мимо tun.
                 .addRoute("0.0.0.0", 1)
                 .addRoute("128.0.0.0", 1)
-                // Fix #16: IPv6 маршрут убран. TcpStack парсит только IPv4 (Packet.wrap
-                // возвращает null для version != 4). Если захватывать IPv6 но не
-                // обрабатывать — пакеты тихо дропаются и DNS/соединения через IPv6 рвутся.
-                // Браузеры используют Happy Eyeballs: при отказе IPv6 сами переключаются
-                // на IPv4, где наша фильтрация работает корректно.
                 .addDnsServer(DNS_SERVER)
                 .addDnsServer("1.1.1.1")
                 .setMtu(MTU)
@@ -131,13 +133,14 @@ class AdBlockerVpnService : VpnService() {
     private fun stopVpn() {
         if (!running.compareAndSet(true, false)) return
 
-        isRunning      = false
-        VpnProtector.set(null)   // Fix #6
+        isRunning = false
+        VpnProtector.set(null)
 
         tcpStack?.stop()
         tcpStack = null
 
-        stopService(Intent(this, LocalProxyService::class.java))
+        proxyServer?.stop()
+        proxyServer = null
 
         vpnThread?.interrupt()
         vpnThread = null
@@ -185,7 +188,7 @@ class AdBlockerVpnService : VpnService() {
 
         return builder
             .setContentTitle("AdBlocker VPN")
-            .setContentText("TcpStack + MITM active")
+            .setContentText("Active")
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .addAction(android.R.drawable.ic_delete, "Stop", stopIntent)
             .setOngoing(true)
@@ -193,14 +196,10 @@ class AdBlockerVpnService : VpnService() {
     }
 }
 
-/**
- * Fix #6: VpnService reference для protect() upstream-сокетов прокси.
- * Инкапсулирован в object вместо file-level @Volatile var.
- */
 object VpnProtector {
-    @Volatile private var service: android.net.VpnService? = null
+    @Volatile private var service: VpnService? = null
 
-    fun set(svc: android.net.VpnService?)  { service = svc }
-    fun protect(socket: java.net.Socket)   { service?.protect(socket) }
-    fun isActive(): Boolean                = service != null
+    fun set(svc: VpnService?)            { service = svc }
+    fun protect(socket: java.net.Socket) { service?.protect(socket) }
+    fun isActive(): Boolean              = service != null
 }
