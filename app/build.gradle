@@ -58,16 +58,18 @@ android {
                 'META-INF/proguard/**',
                 'META-INF/versions/**',
                 'mozilla/public-suffix-list.txt',
-                // barchart-udt нативные папки (тащит LittleProxy)
-                // Содержат history.xml файлы метаданных сборки под разные ОС.
-                // Android путает эти папки с jniLibs и отказывается устанавливать APK.
-                'lib/amd64-Linux-gpp/**',
-                'lib/amd64-Windows-gpp/**',
-                'lib/arm-Linux-gpp/**',
-                'lib/i386-Linux-gpp/**',
-                'lib/i386-MacOSX-gpp/**',
-                'lib/x86_64-MacOSX-gpp/**',
-                'lib/x86-Windows-gpp/**',
+            ]
+        }
+        // Исключаем нативные .so из Netty — они скомпилированы под Linux x86_64
+        // и вызывают INSTALL_FAILED_NO_MATCHING_ABIS на ARM устройствах.
+        // Netty автоматически падает на Java-реализацию при отсутствии нативных либ.
+        jniLibs {
+            excludes += [
+                '**/libnetty_transport_native_epoll_x86_64.so',
+                '**/libnetty_transport_native_epoll_aarch_64.so',
+                '**/libnetty_transport_native_epoll_aarch64.so',
+                '**/libnetty_tcnative*.so',
+                '**/libnetty*.so',
             ]
         }
     }
@@ -75,12 +77,9 @@ android {
 
 configurations.all {
     resolutionStrategy {
+        // Force Netty to a single consistent version compatible with LittleProxy 1.1.2
         force 'io.netty:netty-all:4.0.44.Final'
     }
-    // Исключаем barchart-udt глобально — он тащит нативные .so под Linux/Windows/Mac
-    // которые ломают установку на Android. LittleProxy не использует UDT транспорт
-    // в нашей конфигурации (только TCP через Netty).
-    exclude group: 'com.barchart.udt', module: 'barchart-udt-bundle'
 }
 
 dependencies {
@@ -102,43 +101,44 @@ dependencies {
     implementation 'androidx.recyclerview:recyclerview:1.3.2'
     implementation 'androidx.multidex:multidex:2.0.1'
 
-    // LittleProxy — исключаем все нативные и конфликтующие транзитивные зависимости
+    // LittleProxy — embedded HTTP/HTTPS proxy (Netty-based)
     implementation('org.littleshoot:littleproxy:1.1.2') {
         exclude group: 'io.netty'
         exclude group: 'org.slf4j', module: 'slf4j-log4j12'
         exclude group: 'log4j'
         exclude group: 'com.google.guava'
-        exclude group: 'com.barchart.udt'    // <-- главный виновник
     }
 
-    // Netty (чистая Java NIO, без нативного epoll)
+    // Netty — используем netty-all но исключаем нативный транспорт epoll
+    // (он скомпилирован под Linux x86_64 и ломает установку на ARM).
+    // Netty корректно работает на Java NIO без нативных либ.
     implementation('io.netty:netty-all:4.0.44.Final') {
         exclude group: 'io.netty', module: 'netty-transport-native-epoll'
     }
 
     // SLF4J + Logback for Android
-    implementation 'org.slf4j:slf4j-api:1.7.36'
+    implementation 'org.slf4j:slf4j-api:2.0.9'
     implementation 'com.github.tony19:logback-android:3.0.0'
 
-    // Apache Commons IO
+    // Apache Commons IO (used by LittleProxy internals)
     implementation 'commons-io:commons-io:2.11.0'
 
     // Guava (Android variant)
     implementation 'com.google.guava:guava:33.0.0-android'
 
-    // BouncyCastle — версия 1.70, последняя без нативных либ
+    // BouncyCastle (CA + per-domain cert generation for MITM)
     implementation 'org.bouncycastle:bcprov-jdk15on:1.70'
     implementation 'org.bouncycastle:bcpkix-jdk15on:1.70'
 
-    // OkHttp
+    // OkHttp (upstream connectivity verification)
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
 
-    // Room
+    // Room (persistent blocked-request log)
     implementation 'androidx.room:room-runtime:2.6.1'
     implementation 'androidx.room:room-ktx:2.6.1'
     kapt 'androidx.room:room-compiler:2.6.1'
 
-    // Gson
+    // Gson — используется в AdBlockerHttpFilters для корректного парсинга YouTube JSON (Fix #8)
     implementation 'com.google.code.gson:gson:2.10.1'
 
     // Testing
