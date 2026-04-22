@@ -71,7 +71,6 @@ class LittleProxyServer(
             .withAddress(InetSocketAddress("127.0.0.1", port))
             .withFiltersSource(filtersSource)
             .withProxyAlias("AdBlocker")
-            .withAllowLocalOnly(true)
 
         if (mitmManager != null) {
             bootstrap.withManInTheMiddle(mitmManager)
