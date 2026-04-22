@@ -7,7 +7,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- Нужно для addDisallowedApplication() -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 
@@ -34,6 +33,7 @@
         </activity>
 
         <!-- VPN Service — DNS + TCP proxy ad blocking -->
+        <!-- LittleProxy теперь запускается внутри этого сервиса, не отдельно -->
         <service
             android:name="com.adblocker.vpn.AdBlockerVpnService"
             android:exported="false"
@@ -46,11 +46,6 @@
                 android:name="android.net.VpnService.SUPPORTS_ALWAYS_ON"
                 android:value="true" />
         </service>
-
-        <!-- Local proxy service — LittleProxy + MITM, background -->
-        <service
-            android:name=".core.proxy.LocalProxyService"
-            android:exported="false" />
 
         <!-- CA Certificate export provider -->
         <provider
